@@ -1,0 +1,276 @@
+
+################################################################
+## Case Study: Build Your Own Recommendation System for Movies #
+################################################################
+
+
+# CONTEXT #
+
+# Creating recommendations given a large data base from directly elicited
+# ratings (e.g., ratings of 1 through 5 stars).
+# boosted by the Netflix Prize competition
+# Recommenderlab: provides the infrastructure to develop and test recommender algorithms for rating data.
+# Recommenderlab: basic algorithms and allows the user to develop and use his/her own algorithms in the framework
+# Recommender systems are used by market leaders in several industries (e.g., by Amazon, Netflix and Pandora)
+# Recommender systems apply statistical and knowledge discovery techniques to the problem of making product recommendations based on
+# previously recorded data.
+# Recommendations can help the customer to find products she/he wants to buy faster, promote cross-selling by suggesting additional products and can improve
+# customer loyalty through creating a value-added relationship
+# Two types of recommender systems: content-based approaches and collaborative filtering
+# Content-based recommender systems: The user select a movies. Then I determine  N  films with a content similar to the entry provided by the user. Select the 5 most popular films among these  N  films
+# Collaborative filtering recommender systems:  given rating data by many users for many items (e.g.,
+# 1 to 5 stars for movies elicited directly from the users), one can predict a user's rating for an
+# item not known to him
+# Intuition of the collaborative filtering recommender: users who agreed on the rating for some items also agree
+# on the rating for other items
+
+
+# OBJECTIVE #
+
+# Predicting ratings and creating personalized recommendations for products like books, songs
+# or movies online 
+
+
+## METHODOLOGY ##
+# Users with similar preferences will rate items similarly.
+# Missing ratings for a user can be predicted by first finding a neighborhood of similar users and 
+# then aggregate the ratings of these users to form a prediction.
+# If X and Y are two users, the similarity between X and Y can be defined by:
+# sim(X,Y)=X*Y/||X||*||Y||
+
+
+# GETTING THE DATA - WORKING WITH THE DATA SET
+
+load('C:/Kalairani/TBS/InClass/Advanced R Programming for Business/NetflixRecommendationSystem/Data/MovieRatings.data')
+summary(MoviesRatings)
+
+colnames(data) = c("user_id", "item_id", "rating", "timestamp")
+
+
+# Get ride of column "timestamp"
+
+data = data[ , -which(names(data) %in% c("timestamp"))]
+
+str(data)
+
+summary(data)
+
+hist(data$rating)
+
+
+# DATA SPARSITY
+
+Number_Ratings = nrow(data)
+Number_Movies = length(unique(data$item_id))
+Number_Users = length(unique(data$user_id))
+
+
+# SPLITTING DATA RANDOMLY TRAIN/TEST
+
+install.packages('caTools')
+library(caTools)
+spl = sample.split(data$rating, 0.7)
+train = subset(data, spl == TRUE)
+test = subset(data, spl == FALSE)
+
+
+# POPULARITY RECOMMENDER
+
+install.packages("recommenderlab")
+library("recommenderlab")
+
+
+# The matrix is converted into a realRatingMatrix object which stores the data in sparse format 
+# (only non-NA values are stored explicitly; NA values are represented by a dot)
+
+r <- as(data, "realRatingMatrix")
+
+r
+
+# Have a view to the rating sparse matrix
+
+getRatingMatrix(r)
+
+
+# Understand the data better
+
+as(r[1,], "list")
+
+rowMeans(r[1,])
+
+rowCounts(r[1,])
+
+
+hist(getRatings(r), breaks=100)
+
+hist(rowCounts(r), breaks=50)
+
+hist(colMeans(r), breaks=20)
+
+
+
+# Convert the rating matrix into a list of users with their ratings for closer inspection
+
+as(r, "list")
+
+
+# The rating matrix can converted into a data.frame with user/item/rating tuples.
+
+head(as(r, "data.frame"))
+
+
+# Normalization of the rating matrix to remove biases
+
+r_m <- normalize(r)
+
+r_m
+
+getRatingMatrix(r_m)
+
+
+# A plot of rating data
+
+image(r, main = "Raw Ratings")
+
+
+# The rating matrix can be  transformed into a 0-1 matrix 
+r_b <- binarize(r, minRating=4)
+
+r_b
+
+View(as(r_b, "matrix")[1:100,1:100])
+
+
+
+#### Creating a recommender  ####
+
+# Information about interesting recommandation methods for real-valued rating data
+
+recommenderRegistry$get_entries(dataType = "realRatingMatrix")
+
+
+# We create a recommender which generates recommendations solely on the popularity of items
+
+#  Create a recommender from the first 700 users
+
+rr <- Recommender(r[1:700], method = "POPULAR")
+
+# rr <- Recommender(r[1:700], method = "IBCF")
+
+# Obtain information about the model
+
+names(getModel(rr))
+
+getModel(rr)
+
+
+# Recommendations in the form of an object of class TopNList
+# We create top-5 recommendation lists for two users who were not used to learn the model.
+
+recom <- predict(rr, r[701:702], n=5)
+
+recom
+
+recom@items
+
+recom@ratings
+
+
+# The result contains two ordered top-N recommendation lists, one for each user. The recommended items can be inspected as a list
+
+as(recom, "list")
+
+
+#  The best 3 recommendations for each list using bestN().
+
+recom3 <- bestN(recom, n = 3)
+
+recom3
+
+as(recom3, "list")
+
+
+# Evaluation of predicted ratings
+# For the test set 15 items will be given to the recommender algorithm 
+# and the other items will be held out for computing the error
+
+e <- evaluationScheme(r[1:700], method="split", train=0.7, given=15, goodRating=3)
+
+e
+
+
+# Using others recommanders
+# User-based collaborative filtering
+
+r1 <- Recommender(getData(e, "train"), "UBCF")
+
+r1
+
+# Item-based collaborative filtering
+
+r2 <- Recommender(getData(e, "train"), "IBCF")
+
+r2
+
+
+# Compute predicted ratings for the known part of the test data  (15 items for each
+# user) using the two algorithms.
+
+p1 <- predict(r1, getData(e, "known"), type="ratings")
+
+p1
+
+p2 <- predict(r2, getData(e, "known"), type="ratings")
+
+p2
+
+# Error between the prediction and the unknown part of the test data
+
+error <- rbind(
+   UBCF = calcPredictionAccuracy(p1, getData(e, "unknown")),
+   IBCF = calcPredictionAccuracy(p2, getData(e, "unknown"))
+   )
+
+error
+
+
+# Evaluation of a top-N recommender algorithm
+?evaluationScheme
+
+scheme <- evaluationScheme(r[1:700], method="cross", k=4, given=3, goodRating=3)
+
+scheme
+
+
+# Use the created evaluation scheme to evaluate the recommender method popular. 
+# We evaluate top-1, top-3, top-5, top-10, top-15 and top-20 recommendation lists
+
+results <- evaluate(scheme, method="POPULAR", type = "topNList",
+                     n=c(1,3,5,10,15,20))
+
+results
+
+# confusion matrices for the 1st run
+
+getConfusionMatrix(results)[[1]]
+
+# Average confusion matrices for all the 4 runs
+
+avg(results)
+
+
+# ROC curve for recommender method POPULAR
+
+plot(results, annotate=TRUE)
+
+# Precision-recall plot for method POPULAR.
+
+plot(results, "prec/rec", annotate=TRUE)
+
+
+
+
+
+
+
+
